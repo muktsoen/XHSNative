@@ -15,6 +15,14 @@
 #import <objc/runtime.h>
 #import "XHSNativeConfig.h"
 
+#pragma mark - 底部胶囊
+
+// 手机屏幕在底部收成 R 角（16 Pro 大概 55pt），胶囊只离屏幕边 8pt 时，
+// 两头的圆会顺着 R 角走，看起来像被屏幕切掉一块。系统自己的浮起控件都留 16pt。
+// 高度原来是图文 48 / 视频 44。这里取更宽一档：边距 20、高 42。
+static const CGFloat kBottomSide = 20;
+static const CGFloat kBottomHeight = 42;
+
 #pragma mark - 滚动联动
 
 // 小红书的页面是多层嵌套的分页容器，系统找不到真正在滚的那个列表。
@@ -219,6 +227,31 @@ static NSArray<NSArray *> *glassBars(void) {
 
 + (void)clearBackground:(UIView *)view {
     if (view.backgroundColor && ![view.backgroundColor isEqual:UIColor.clearColor]) view.backgroundColor = UIColor.clearColor;
+}
+
+// 胶囊往里收了，里面那排图标也要跟着收，否则会顶出胶囊的圆头。
+// 位置按容器宽度算，所以每次 layout 都是同一个结果，不会越缩越窄。
++ (void)insetRow:(UIView *)row to:(CGFloat)side {
+    UIView *box = row.superview;
+    if (!box || CGRectIsEmpty(box.bounds)) return;
+    CGRect target = CGRectMake(side, CGRectGetMinY(row.frame),
+                               CGRectGetWidth(box.bounds) - side * 2, CGRectGetHeight(row.frame));
+    if (CGRectGetWidth(target) <= 0 || CGRectEqualToRect(row.frame, target)) return;
+    row.frame = target;
+    [row setNeedsLayout];
+    [row layoutIfNeeded];
+}
+
+// 视频页那一排是各自独立的控件，没法整体改宽度，就按左右各平移同样的量。
+// 用 transform 平移不参与自动布局，不会和它的约束打架。
++ (void)nudgeRow:(UIView *)bar side:(CGFloat)side {
+    CGFloat delta = side - 8, middle = CGRectGetMidX(bar.bounds);
+    for (UIView *view in bar.subviews) {
+        if ([view isKindOfClass:UIVisualEffectView.class] || ![self isVisible:view]) continue;
+        CGFloat dx = CGRectGetMidX(view.frame) < middle ? delta : -delta;
+        CGAffineTransform transform = CGAffineTransformMakeTranslation(dx, 0);
+        if (!CGAffineTransformEqualToTransform(view.transform, transform)) view.transform = transform;
+    }
 }
 
 + (BOOL)isVisible:(UIView *)view {
@@ -646,7 +679,10 @@ static char kNoteLeftKey, kNoteRightKey, kNoteBottomKey, kNoteEdgeKey;
     for (UIView *group in stack.subviews)
         for (UIView *field in group.subviews)
             if ([NSStringFromClass(field.class) hasSuffix:@"Field"]) [self clearBackground:field];
-    CGRect frame = CGRectMake(8, CGRectGetMidY(stack.frame) - 24, CGRectGetWidth(content.bounds) - 16, 48);
+    // 图标先跟着往里收，再按收窄后的宽度摆胶囊，两者之间留 8pt
+    [self insetRow:stack to:kBottomSide + 8];
+    CGRect frame = CGRectMake(kBottomSide, CGRectGetMidY(stack.frame) - kBottomHeight / 2,
+                              CGRectGetWidth(content.bounds) - kBottomSide * 2, kBottomHeight);
     [self plateOn:bar key:&kNoteBottomKey below:stack frame:frame bar:kXHSNativeBarNoteBottom];
 }
 
@@ -750,7 +786,10 @@ static void darken(UIVisualEffectView *glass) {
     }
     if (!lowest || CGRectIsNull(row)) return;
     // 这一排控件的可见内容在各自格子的下半部分
-    CGRect frame = CGRectMake(8, CGRectGetMaxY(row) - 39, CGRectGetWidth(bar.bounds) - 16, 44);
+    [self nudgeRow:bar side:kBottomSide];
+    // 原来 44 高、y = maxY - 39，底边落在 maxY + 5；高度变了要跟着换算，否则胶囊会脱离图标
+    CGRect frame = CGRectMake(kBottomSide, CGRectGetMaxY(row) + 5 - kBottomHeight,
+                              CGRectGetWidth(bar.bounds) - kBottomSide * 2, kBottomHeight);
     darken([self plateOn:bar key:&kVideoBottomKey below:lowest frame:frame bar:kXHSNativeBarVideoBottom]);
 }
 
