@@ -22,8 +22,8 @@
 // 高度原来是图文 48 / 视频 44。这里取更宽一档：边距 22、高 42。
 static const CGFloat kBottomSide = 22;
 static const CGFloat kBottomHeight = 42;
-// 图标还要比胶囊边缘再往里这么多，才不会贴着圆角
-static const CGFloat kBottomInner = 8;
+// 右半边那组按钮整组往左让这么多，等于把输入框多余的那截宽度还回去
+static const CGFloat kBottomInner = 12;
 // 整条往下挪，原来贴着安全区上沿，看着偏高
 static const CGFloat kBottomDrop = 6;
 
@@ -235,21 +235,21 @@ static NSArray<NSArray *> *glassBars(void) {
 
 // 胶囊往里收了，里面那排图标也要跟着收，否则会顶出胶囊的圆头。
 // 位置按容器宽度算，所以每次 layout 都是同一个结果，不会越缩越窄。
-+ (void)alignRow:(UIView *)row inView:(UIView *)box side:(CGFloat)side drop:(CGFloat)drop {
++ (void)alignRow:(UIView *)row inView:(UIView *)box inset:(CGFloat)inset drop:(CGFloat)drop {
     if (!row || !box) return;
     CGFloat width = CGRectGetWidth(box.bounds);
     if (width <= 1 || CGRectIsEmpty(row.frame)) return;
-    CGFloat originX = CGRectGetMinX(row.frame);
+    // row 自己就是容器时（视频底栏），frame 原点是相对上一层的，不能拿来当偏移
+    CGFloat originX = (row == box) ? 0 : CGRectGetMinX(row.frame);
     CGFloat middle = width / 2;
     for (UIView *view in row.subviews) {
         if (![self isVisible:view]) continue;
         CGFloat w = CGRectGetWidth(view.bounds), h = CGRectGetHeight(view.bounds);
         // 整条宽的（评论输入框）不参与：它两头都贴边，往哪边推都会把另一边顶出去
         if (w <= 1 || h <= 1 || w > width * 0.5) continue;
-        // 用 bounds 和 center 算，不读 frame，反复调用不会越推越偏
-        CGFloat left = originX + view.center.x - w / 2;
-        CGFloat right = left + w;
-        CGFloat dx = (left + right) / 2 < middle ? side - left : (width - side) - right;
+        // 右半边整组往左让，把位置还给输入框；左半边不动（铅笔本来就有留白）
+        // 用 center 算，受 transform 影响不到，反复调用不会越让越偏
+        CGFloat dx = (originX + view.center.x) < middle ? 0 : -inset;
         CGAffineTransform transform = CGAffineTransformMakeTranslation(dx, drop);
         if (!CGAffineTransformEqualToTransform(view.transform, transform)) view.transform = transform;
     }
@@ -693,7 +693,7 @@ static char kNoteLeftKey, kNoteRightKey, kNoteBottomKey, kNoteEdgeKey;
         for (UIView *field in group.subviews)
             if ([NSStringFromClass(field.class) hasSuffix:@"Field"]) [self clearBackground:field];
     // 图标按「胶囊边缘 + 留白」摆好，并整体下移；胶囊用同一个位移，两者始终同心
-    [self alignRow:stack inView:content side:kBottomSide + kBottomInner drop:kBottomDrop];
+    [self alignRow:stack inView:content inset:kBottomInner drop:kBottomDrop];
     CGRect frame = CGRectMake(kBottomSide,
                               CGRectGetMidY(stack.frame) + kBottomDrop - kBottomHeight / 2,
                               CGRectGetWidth(content.bounds) - kBottomSide * 2, kBottomHeight);
@@ -800,7 +800,7 @@ static void darken(UIVisualEffectView *glass) {
     }
     if (!lowest || CGRectIsNull(row)) return;
     // 这一排控件的可见内容在各自格子的下半部分
-    [self nudgeRow:bar side:kBottomSide + kBottomInner];
+    [self alignRow:bar inView:bar inset:kBottomInner drop:0];
     // 原来 44 高、y = maxY - 39，底边落在 maxY + 5；高度变了要跟着换算，否则胶囊会脱离图标
     CGRect frame = CGRectMake(kBottomSide, CGRectGetMaxY(row) + 5 - kBottomHeight,
                               CGRectGetWidth(bar.bounds) - kBottomSide * 2, kBottomHeight);
