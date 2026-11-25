@@ -19,9 +19,13 @@
 
 // 手机屏幕在底部收成 R 角（16 Pro 大概 55pt），胶囊只离屏幕边 8pt 时，
 // 两头的圆会顺着 R 角走，看起来像被屏幕切掉一块。系统自己的浮起控件都留 16pt。
-// 高度原来是图文 48 / 视频 44。这里取更宽一档：边距 20、高 42。
-static const CGFloat kBottomSide = 20;
+// 高度原来是图文 48 / 视频 44。这里取更宽一档：边距 22、高 42。
+static const CGFloat kBottomSide = 22;
 static const CGFloat kBottomHeight = 42;
+// 图标还要比胶囊边缘再往里这么多，才不会贴着圆角
+static const CGFloat kBottomInner = 8;
+// 整条往下挪，原来贴着安全区上沿，看着偏高
+static const CGFloat kBottomDrop = 6;
 
 #pragma mark - 滚动联动
 
@@ -231,15 +235,24 @@ static NSArray<NSArray *> *glassBars(void) {
 
 // 胶囊往里收了，里面那排图标也要跟着收，否则会顶出胶囊的圆头。
 // 位置按容器宽度算，所以每次 layout 都是同一个结果，不会越缩越窄。
-+ (void)insetRow:(UIView *)row to:(CGFloat)side {
-    UIView *box = row.superview;
-    if (!box || CGRectIsEmpty(box.bounds)) return;
-    CGRect target = CGRectMake(side, CGRectGetMinY(row.frame),
-                               CGRectGetWidth(box.bounds) - side * 2, CGRectGetHeight(row.frame));
-    if (CGRectGetWidth(target) <= 0 || CGRectEqualToRect(row.frame, target)) return;
-    row.frame = target;
-    [row setNeedsLayout];
-    [row layoutIfNeeded];
++ (void)alignRow:(UIView *)row inView:(UIView *)box side:(CGFloat)side drop:(CGFloat)drop {
+    if (!row || !box) return;
+    CGFloat width = CGRectGetWidth(box.bounds);
+    if (width <= 1 || CGRectIsEmpty(row.frame)) return;
+    CGFloat originX = CGRectGetMinX(row.frame);
+    CGFloat middle = width / 2;
+    for (UIView *view in row.subviews) {
+        if (![self isVisible:view]) continue;
+        CGFloat w = CGRectGetWidth(view.bounds), h = CGRectGetHeight(view.bounds);
+        // 整条宽的（评论输入框）不参与：它两头都贴边，往哪边推都会把另一边顶出去
+        if (w <= 1 || h <= 1 || w > width * 0.5) continue;
+        // 用 bounds 和 center 算，不读 frame，反复调用不会越推越偏
+        CGFloat left = originX + view.center.x - w / 2;
+        CGFloat right = left + w;
+        CGFloat dx = (left + right) / 2 < middle ? side - left : (width - side) - right;
+        CGAffineTransform transform = CGAffineTransformMakeTranslation(dx, drop);
+        if (!CGAffineTransformEqualToTransform(view.transform, transform)) view.transform = transform;
+    }
 }
 
 // 视频页那一排是各自独立的控件，没法整体改宽度，就按左右各平移同样的量。
@@ -679,9 +692,10 @@ static char kNoteLeftKey, kNoteRightKey, kNoteBottomKey, kNoteEdgeKey;
     for (UIView *group in stack.subviews)
         for (UIView *field in group.subviews)
             if ([NSStringFromClass(field.class) hasSuffix:@"Field"]) [self clearBackground:field];
-    // 图标先跟着往里收，再按收窄后的宽度摆胶囊，两者之间留 8pt
-    [self insetRow:stack to:kBottomSide + 8];
-    CGRect frame = CGRectMake(kBottomSide, CGRectGetMidY(stack.frame) - kBottomHeight / 2,
+    // 图标按「胶囊边缘 + 留白」摆好，并整体下移；胶囊用同一个位移，两者始终同心
+    [self alignRow:stack inView:content side:kBottomSide + kBottomInner drop:kBottomDrop];
+    CGRect frame = CGRectMake(kBottomSide,
+                              CGRectGetMidY(stack.frame) + kBottomDrop - kBottomHeight / 2,
                               CGRectGetWidth(content.bounds) - kBottomSide * 2, kBottomHeight);
     [self plateOn:bar key:&kNoteBottomKey below:stack frame:frame bar:kXHSNativeBarNoteBottom];
 }
@@ -786,7 +800,7 @@ static void darken(UIVisualEffectView *glass) {
     }
     if (!lowest || CGRectIsNull(row)) return;
     // 这一排控件的可见内容在各自格子的下半部分
-    [self nudgeRow:bar side:kBottomSide];
+    [self nudgeRow:bar side:kBottomSide + kBottomInner];
     // 原来 44 高、y = maxY - 39，底边落在 maxY + 5；高度变了要跟着换算，否则胶囊会脱离图标
     CGRect frame = CGRectMake(kBottomSide, CGRectGetMaxY(row) + 5 - kBottomHeight,
                               CGRectGetWidth(bar.bounds) - kBottomSide * 2, kBottomHeight);

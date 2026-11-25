@@ -16,7 +16,7 @@
 + (UIVisualEffectView *)plateOn:(UIView *)owner key:(const void *)key below:(UIView *)below frame:(CGRect)frame bar:(NSString *)bar;
 + (void)clearBackground:(UIView *)view;
 // 把一排图标整体往里收，收的量按容器宽度算，反复调用结果一样
-+ (void)insetRow:(UIView *)row to:(CGFloat)side;
++ (void)alignRow:(UIView *)row inView:(UIView *)box side:(CGFloat)side drop:(CGFloat)drop;
 + (void)nudgeRow:(UIView *)bar side:(CGFloat)side;
 + (BOOL)isVisible:(UIView *)view;
 + (UIView *)subviewOf:(UIView *)view named:(NSString *)className;
